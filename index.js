@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 'use strict'
 const BbPromise = require('bluebird')
 const fs = BbPromise.promisifyAll(require('fs'))
@@ -5,27 +6,58 @@ const path = require('path')
 const vm = require('vm')
 const esprima = require('esprima')
 const _ = require('lodash')
+const chalk = require('chalk')
+
 const VisitorContext = require('./lib/visitors').VisitorContext
 const unpacker = require('./lib/unpacker')
+const ModuleFinder = require('./lib/ModuleFinder')
 
-// load the test files and see if we can find a AST signature of the modules:
+const argv = process.argv.slice(2)
 
 main().then().catch(e => console.error('Error!!!', e))
 
 async function main () {
-  let root = path.resolve('.')
-  let testFiles = await fs.readdirAsync(path.join(root, 'testfiles'))
-  for (let testFile of testFiles) {
-    try {
-      console.log('\nUnpacking', testFile)
-      let code = await fs.readFileAsync(path.join(root, 'testfiles', testFile), 'utf8')
-      let loc = findPackedModules(code)
-      let packedModules = extractPackedModules(code, loc)
-      unpacker.unpack(packedModules, path.join(root, 'out', testFile))
-    } catch (err) {
-      console.error('\nERROR with test file', testFile, err, '\n')
-    }
+  if (argv.length < 1) {
+    help('file name must be provided')
+    return 1
   }
+  let file = argv[0]
+  let outDir
+  if (argv.length < 2) {
+    outDir = path.resolve(path.dirname(file), 'lovlify')
+  } else {
+    outDir = argv[1]
+  }
+
+  unpackFile(file, outDir)
+}
+
+async function unpackFile (file, outDir) {
+  file = path.resolve(file)
+  outDir = path.resolve(outDir, path.basename(file))
+  console.log(`
+  Unpacking ${file} to ${outDir}/ ...
+  `)
+  let code = await fs.readFileAsync(file, 'utf8')
+  let loc = findPackedModules(code)
+  let packedModules = extractPackedModules(code, loc)
+  unpacker.unpack(packedModules, outDir)
+}
+
+function help (errText) {
+  if (errText) {
+    console.error(`
+  ${chalk.bold.red('Error:')} ${chalk.red(errText)}`)
+  }
+  console.log(`
+  ${chalk.bold('Usage')}: lovlify file outdir
+
+  ${chalk.bold('file')} is an packed file/bundle.
+  ${chalk.bold('outdir')} is the destination directory for the unpacked bundle.
+
+  Notes:
+    Currently only browserfy bundles are supported.
+  `)
 }
 
 /**
@@ -57,54 +89,4 @@ function moduleFromCode (sourceCode) {
   return globals.module.exports
 }
 
-class ModuleFinder {
-  constructor () {
-    this.packedModulesCandidates = []
-  }
-
-  visitFunc (node, context) {
-    // console.log('visitFunc:', node)
-    if (node.type === 'ObjectExpression') {
-      if (this.hasProperties(node) && this.allPropertiesAreNumbers(node)) {
-        console.log(`Found module list at range ${JSON.stringify(node.range)}, location ${JSON.stringify(node.loc)}`)
-        this.packedModulesCandidates.push(node.range)
-      }
-    }
-  }
-
-  visitFuncBound () {
-    return this.visitFunc.bind(this)
-  }
-
-  /**
-   * Returns the found candidate
-   */
-  get packedModules () {
-    if (_.size(this.packedModulesCandidates) > 1) {
-      let locStr = _.join(this.packedModulesCandidates, ';')
-      throw new Error('Found multiple candidates for the module list:' + locStr)
-    } else if (_.size(this.packedModulesCandidates) === 0) {
-      throw new Error('No modules list found.')
-    }
-    return this.packedModulesCandidates[0]
-  }
-
-  hasProperties (objectExpressionNode) {
-    return _.size(objectExpressionNode.properties) > 0
-  }
-
-  allPropertiesAreNumbers (objectExpressionNode) {
-    for (let propNode of objectExpressionNode.properties) {
-      console.assert(propNode.type === 'Property', 'expected node to be type property!')
-      if (propNode.key.type === 'Literal' && _.isNumber(propNode.key.value)) {
-        if (propNode.value.type !== 'ArrayExpression') {
-          // console.log('Prop', propNode.value, '==', propNode.value, '(not ArrayExpression)')
-          return false
-        }
-      } else {
-        return false
-      }
-    }
-    return true
-  }
-}
+module.exports = unpackFile
