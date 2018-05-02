@@ -8,40 +8,52 @@ const esprima = require('esprima')
 const _ = require('lodash')
 const chalk = require('chalk')
 
+const fsutil = require('./lib/fsutil')
 const VisitorContext = require('./lib/visitors').VisitorContext
 const unpacker = require('./lib/unpacker')
 const ModuleFinder = require('./lib/ModuleFinder')
 
 const argv = process.argv.slice(2)
 
-main().then().catch(e => console.error('Error!!!', e))
+if (require.main === module) {
+  main().then().catch(e => console.error('Error!!!', e))
+}
 
 async function main () {
-  if (argv.length < 1) {
-    help('file name must be provided')
+  try {
+    await unpackFile(...argv)
+  } catch (err) {
+    console.log('The following error occurred:' + err.toString())
+  }
+}
+
+function prepareOutDir (file, outDir) {
+  if (!file) {
+    help('File to process must be provided as the first argument.')
     return 1
   }
-  let file = argv[0]
-  let outDir
-  if (argv.length < 2) {
-    outDir = path.resolve(path.dirname(file), 'lovlify')
-  } else {
-    outDir = argv[1]
+  if (!outDir) {
+    outDir = path.resolve(path.dirname(file))
   }
-
-  unpackFile(file, outDir)
+  // entire contents always go into a clean new directory:
+  outDir = path.join(outDir, path.basename(file) + '-lovlify')
+  // if the out dir already exists, delete what's there
+  fsutil.cleanDir(outDir)
+  return outDir
 }
 
 async function unpackFile (file, outDir) {
+  outDir = prepareOutDir(file, outDir)
   file = path.resolve(file)
-  outDir = path.resolve(outDir, path.basename(file))
-  console.log(`
-  Unpacking ${file} to ${outDir}/ ...
-  `)
+  console.log(`\nUnpacking ${file} to ${outDir}/ ...`)
   let code = await fs.readFileAsync(file, 'utf8')
+  console.log('Searching for packed modules...')
   let loc = findPackedModules(code)
+  console.log('Extracting packed modules...')
   let packedModules = extractPackedModules(code, loc)
+  console.log('Unpacking packed modules to disk...')
   unpacker.unpack(packedModules, outDir)
+  console.log(`\nUnpacking ${file} to ${outDir}/ complete.`)
 }
 
 function help (errText) {

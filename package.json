@@ -1,7 +1,7 @@
 {
   "name": "lovlify",
   "version": "0.0.1",
-  "description": "After Browserfy, Lovlify.",
+  "description": "After Browserify, Lovlify.",
   "main": "index.js",
   "author": "Scott Willeke <scott@willeke.com>",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "lovlify": "./index.js"
   },
   "scripts": {
-    "test": "./node_modules/.bin/_mocha ./test/**/*.test.js"
+    "test": "./node_modules/.bin/mocha 'test/**/*.test.js'"
   },
   "standard": {
     "ignore": [
